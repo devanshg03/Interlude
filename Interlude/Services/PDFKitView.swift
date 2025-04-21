@@ -9,6 +9,8 @@ import SwiftUI
 import PDFKit
 
 struct PDFKitView: NSViewRepresentable {
+    typealias NSViewType = PDFView
+
     let url: URL
 
     func makeNSView(context: Context) -> PDFView {

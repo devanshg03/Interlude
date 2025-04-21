@@ -10,23 +10,18 @@ import SwiftData
 
 @main
 struct InterludeApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Paper.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
+    @StateObject private var appVM = AppViewModel()
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            if let _ = appVM.folderURL {
+                LibraryContainerView()
+                    .environmentObject(appVM)
+                    .modelContainer(for: Paper.self, inMemory: true)
+            } else {
+                OnboardingView()
+                    .environmentObject(appVM)
+            }
         }
-        .modelContainer(sharedModelContainer)
     }
 }
