@@ -12,33 +12,42 @@ struct PaperDetailView: View {
     @EnvironmentObject var appVM: AppViewModel
     @ObservedObject var paper: Paper
 
-    @State private var pdfView: PDFView?            // ← hold the PDFView
+    // bind to the underlying PDFView
+    @State private var pdfView: PDFView?
+    // title‐editing state
     @State private var isEditingTitle = false
-    @State private var draftTitle: String = ""
+    @State private var draftTitle = ""
+    // delay loading the PDF to prevent SwiftUI warnings
     @State private var isReadyToLoad = false
+    // which markup tool is active (or nil)
+    @State private var activeTool: MarkupType? = nil
 
     var body: some View {
-        VStack(spacing: 0) {
-            // ───────── Top toolbar ─────────
-            HStack {
-                // Title edit as before…
+        VStack(spacing: 16) {
+            // ── Top bar ──
+            HStack(spacing: 12) {
+                // title / edit toggle
                 if isEditingTitle {
                     TextField("Title", text: $draftTitle)
                         .textFieldStyle(.roundedBorder)
                         .font(.title2)
                         .frame(maxWidth: 400)
+
                     Button {
                         DispatchQueue.main.async {
                             paper.title = draftTitle
                             isEditingTitle = false
                         }
                     } label: {
-                        Label("Save", systemImage: "checkmark")
+                        Image(systemName: "checkmark")
                     }
                     .buttonStyle(.borderedProminent)
                 } else {
                     Text(paper.title)
-                        .font(.title2).bold().lineLimit(1)
+                        .font(.title2).bold()
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
                     Button {
                         draftTitle = paper.title
                         isEditingTitle = true
@@ -50,31 +59,16 @@ struct PaperDetailView: View {
 
                 Spacer()
 
-                // ── Annotation toolbar ──
-                HStack(spacing: 12) {
-                    Button(action: { annotate(.highlight) }) {
-                        Image(systemName: "highlighter")
-                    }
-                    .help("Highlight")
-
-                    Button(action: { annotate(.underline) }) {
-                        Image(systemName: "underline")
-                    }
-                    .help("Underline")
-
-                    Button(action: { annotate(.strikeOut) }) {
-                        Image(systemName: "strikethrough")
-                    }
-                    .help("Strike-through")
-
-                    Button(action: addNote) {
-                        Image(systemName: "note.text")
-                    }
-                    .help("Add Note")
+                // ── Annotation tools ──
+                HStack(spacing: 8) {
+                    ToolButton(icon: "highlighter", tool: .highlight, activeTool: $activeTool)
+                    ToolButton(icon: "underline",    tool: .underline, activeTool: $activeTool)
+                    ToolButton(icon: "strikethrough",tool: .strikeOut, activeTool: $activeTool)
                 }
-                .buttonStyle(.plain)
 
-                // Read/unread toggle
+                Spacer()
+
+                // mark read/unread
                 Button {
                     DispatchQueue.main.async { paper.isRead.toggle() }
                 } label: {
@@ -82,18 +76,24 @@ struct PaperDetailView: View {
                 }
                 .buttonStyle(.bordered)
             }
-            .padding(.horizontal)
+            .padding([.top, .horizontal])
+
             Divider()
 
-            // ────────── PDF Container ──────────
+            // ── PDF area ──
             Group {
                 if isReadyToLoad {
                     if let folder = appVM.folderURL {
                         let fullURL = folder.appendingPathComponent(paper.filename)
                         if FileManager.default.fileExists(atPath: fullURL.path),
-                           let _ = PDFDocument(url: fullURL) {
-                            PDFKitView(url: fullURL, pdfViewRef: $pdfView)
-                                .edgesIgnoringSafeArea(.all)
+                           let _ = PDFDocument(url: fullURL)
+                        {
+                            PDFKitView(
+                                url: fullURL,
+                                pdfViewRef: $pdfView,
+                                activeTool: $activeTool
+                            )
+                            .edgesIgnoringSafeArea(.all)
                         } else {
                             Text("🚫 PDF not found:\n\(paper.filename)")
                                 .multilineTextAlignment(.center)
@@ -113,56 +113,43 @@ struct PaperDetailView: View {
         }
         .onAppear {
             draftTitle = paper.title
+            // short delay before loading PDF
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 isReadyToLoad = true
             }
         }
     }
+}
 
-    // MARK: – Annotation Helpers
+// A small helper view for each markup‐tool button
+fileprivate struct ToolButton: View {
+    let icon: String
+    let tool: MarkupType
+    @Binding var activeTool: MarkupType?
 
-    enum MarkupType {
-        case highlight, underline, strikeOut
-    }
-
-    private func annotate(_ type: MarkupType) {
-        guard let pdfView = pdfView,
-              let selection = pdfView.currentSelection else { return }
-
-        for page in selection.pages {
-            let lines = selection
-                .selectionsByLine()            // break multi-line selection
-                .filter { $0.pages.contains(page) }
-            for lineSel in lines {
-                let bounds = lineSel.bounds(for: page)
-                let annotation = PDFAnnotation(bounds: bounds,
-                                               forType: markupSubtype(type),
-                                               withProperties: nil)
-                annotation.color = .yellow.withAlphaComponent(0.4)
-                page.addAnnotation(annotation)
-            }
+    var body: some View {
+        Button {
+            // toggle on/off
+            activeTool = (activeTool == tool ? nil : tool)
+        } label: {
+            Image(systemName: icon)
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(activeTool == tool
+                              ? Color.accentColor.opacity(0.25)
+                              : Color.gray.opacity(0.15))
+                )
         }
+        .buttonStyle(.plain)
+        .help(toolHelp)
     }
 
-    private func markupSubtype(_ type: MarkupType) -> PDFAnnotationSubtype {
-        switch type {
-        case .highlight:  return .highlight
-        case .underline:  return .underline
-        case .strikeOut:  return .strikeOut
-        }
-    }
-
-    private func addNote() {
-        guard let pdfView = pdfView,
-              let selection = pdfView.currentSelection else { return }
-
-        // Create a text annotation at the first line’s rectangle
-        if let page = selection.pages.first {
-            let lineRect = selection.bounds(for: page)
-            let note = PDFAnnotation(bounds: lineRect, forType: .text, withProperties: nil)
-            note.color = .orange
-            note.contents = "💡 Note"
-            page.addAnnotation(note)
+    private var toolHelp: String {
+        switch tool {
+        case .highlight:  return "Highlight"
+        case .underline:  return "Underline"
+        case .strikeOut:  return "Strike-through"
         }
     }
 }
