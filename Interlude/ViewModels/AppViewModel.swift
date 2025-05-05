@@ -14,11 +14,11 @@ enum ReadFilter: String, CaseIterable, Identifiable {
 }
 
 final class AppViewModel: ObservableObject {
-    @Published var folderURL: URL?
     @Published var selectedPaperID: UUID? = nil
     @Published var selectedTag: String?
     @Published var readFilter: ReadFilter = .all
-    
+    @Published var folderURL: URL?
+
     var allPapers: [Paper] = []
 
     var selectedPaper: Paper? {
@@ -26,10 +26,23 @@ final class AppViewModel: ObservableObject {
     }
 
     init() {
-        UserDefaults.standard.removeObject(forKey: "papersFolder")
-        // restore last folder via UserDefaults
-        if let path = UserDefaults.standard.string(forKey: "papersFolder") {
-            folderURL = URL(fileURLWithPath: path)
+        // Load previously selected folder from security-scoped bookmark
+        if let bookmarkData = UserDefaults.standard.data(forKey: "papersFolderBookmark") {
+            var isStale = false
+            if let restoredURL = try? URL(
+                resolvingBookmarkData: bookmarkData,
+                options: [.withSecurityScope],
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ) {
+                if restoredURL.startAccessingSecurityScopedResource() {
+                    folderURL = restoredURL
+                } else {
+                    print("⚠️ Failed to access security-scoped resource.")
+                }
+            } else {
+                print("⚠️ Failed to restore folder bookmark.")
+            }
         }
     }
 
@@ -40,9 +53,25 @@ final class AppViewModel: ObservableObject {
         panel.allowsMultipleSelection   = false
         panel.prompt                    = "Select Papers Folder"
         panel.title                     = "Choose Your Papers Folder"
+
         if panel.runModal() == .OK, let url = panel.url {
-            folderURL = url
-            UserDefaults.standard.set(url.path, forKey: "papersFolder")
+            if url.startAccessingSecurityScopedResource() {
+                folderURL = url
+
+                // Save folder bookmark instead of raw path
+                if let bookmark = try? url.bookmarkData(
+                    options: .withSecurityScope,
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                ) {
+                    UserDefaults.standard.set(bookmark, forKey: "papersFolderBookmark")
+                } else {
+                    print("⚠️ Failed to create bookmark for folder.")
+                }
+            } else {
+                print("⚠️ Failed to access security-scoped resource for selected folder.")
+            }
         }
     }
 }
+

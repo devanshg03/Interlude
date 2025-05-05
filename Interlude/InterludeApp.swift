@@ -17,7 +17,7 @@ struct InterludeApp: App {
             if let _ = appVM.folderURL {
                 LibraryContainerView()
                     .environmentObject(appVM)
-                    .modelContainer(for: Paper.self, inMemory: true)
+                    .modelContainer(for: Paper.self)
             } else {
                 OnboardingView()
                     .environmentObject(appVM)

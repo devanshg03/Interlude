@@ -49,20 +49,46 @@ struct SidebarView: View {
         )
 
         modelContext.insert(newPaper)
+        try? modelContext.save()
     }
+    
+    func clearAllPapers(context: ModelContext) {
+        let fetch = FetchDescriptor<Paper>()
+        if let all = try? context.fetch(fetch) {
+            for paper in all {
+                context.delete(paper)
+            }
+
+            try? context.save()
+        }
+    }
+
 
 
     var body: some View {
         VStack(alignment: .center, spacing: 12) {
             
-            Button(action: importPapersFromFolder) {
-                Label("Import", systemImage: "tray.and.arrow.down.fill")
-                    .font(.body)
-                    .frame(maxWidth: .infinity, alignment: .center)
+            HStack(spacing: 8) {
+                ForEach([
+                    ("tray.and.arrow.down.fill", importPapersFromFolder, "Import Papers"),
+                    ("trash", { clearAllPapers(context: modelContext) }, "Clear Library")
+                ], id: \.0) { icon, action, tooltip in
+                    Button(action: action) {
+                        Image(systemName: icon)
+                            .frame(maxWidth: .infinity, minHeight: 28)
+                            .foregroundColor(.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.gray.opacity(0.15))
+                    )
+                    .help(tooltip)
+                }
             }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
-            .frame(maxWidth: .infinity) // ⬅️ THIS expands the button fully
+            .frame(height: 36)
+
+
 
             Divider()
             
